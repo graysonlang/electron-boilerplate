@@ -1,0 +1,129 @@
+import jetpack  from 'fs-jetpack'
+import gulp  from 'gulp'
+import less  from 'gulp-less'
+import os  from 'os'
+import pathUtil  from 'path'
+import Q  from 'q'
+import rollup  from 'rollup'
+import utils  from './tasks/utils.js'
+
+var projectDir = jetpack;
+var srcDir = projectDir.cwd('./src');
+var destDir = projectDir.cwd('./build');
+
+var paths = {
+    copyFromSrcDir: [
+        './node_modules/**',
+        './vendor/**',
+        './**/*.html'
+    ],
+}
+
+// --------------------------------------------------
+// Helpers
+// --------------------------------------------------
+var bundle = function (src, dest) {
+    var deferred = Q.defer();
+
+    rollup.rollup({
+        entry: src
+    }).then(function (bundle) {
+        var jsFile = pathUtil.basename(dest);
+        var result = bundle.generate({
+            format: 'iife',
+            sourceMap: true,
+            sourceMapFile: jsFile,
+        });
+        return Q.all([
+            destDir.writeAsync(dest, result.code + '\n//# sourceMappingURL=' + jsFile + '.map'),
+            destDir.writeAsync(dest + '.map', result.map.toString()),
+        ]);
+    }).then(function () {
+        deferred.resolve();
+    }).catch(function (err) {
+        console.error(err);
+    });
+
+    return deferred.promise;
+};
+
+var cleanTask = function() {
+    return destDir.dirAsync('.', { empty: true });
+};
+
+var copyTask = function () {
+    return projectDir.copyAsync('src', destDir.path(), {
+        overwrite: true,
+        matching: paths.copyFromSrcDir
+    });
+};
+
+var bundleTask = function () {
+    return Q.all([
+        bundle(srcDir.path('background.js'), destDir.path('background.js')),
+        bundle(srcDir.path('app.js'), destDir.path('app.js')),
+    ]);
+};
+
+var lessTask = function () {
+    return gulp.src('src/stylesheets/main.less')
+    .pipe(less())
+    .pipe(gulp.dest(destDir.path('stylesheets')));
+};
+
+var finalizeTask = function () {
+    var manifest = srcDir.read('package.json', 'json');
+    // Add "dev" or "test" suffix to name, so Electron will write all data
+    // like cookies and localStorage in separate places for each environment.
+    switch (utils.getEnvName()) {
+        case 'development':
+            manifest.name += '-dev';
+            manifest.productName += ' Dev';
+            break;
+        case 'test':
+            manifest.name += '-test';
+            manifest.productName += ' Test';
+            break;
+    }
+    destDir.write('package.json', manifest);
+
+    var configFilePath = projectDir.path('config/env_' + utils.getEnvName() + '.json');
+    destDir.copy(configFilePath, 'env_config.json');
+};
+
+var watchTask = function () {
+    gulp.watch('src/**/*.js', ['bundle-watch']);
+    gulp.watch(paths.copyFromAppDir, { cwd: 'src' }, ['copy-watch']);
+    gulp.watch('src/**/*.less', ['less-watch']);
+};
+
+var platformString = function () {
+  switch (os.platform()) {
+    case 'darwin': return 'osx';
+    case 'win32': return 'windows';
+  }
+  return 'unsupported';
+};
+
+// --------------------------------------------------
+
+gulp.task('bundle', ['clean'], bundleTask);
+gulp.task('bundle-watch', bundleTask);
+gulp.task('clean', cleanTask);
+gulp.task('copy', ['clean'], copyTask);
+gulp.task('copy-watch', copyTask);
+gulp.task('less', ['clean'], lessTask);
+gulp.task('less-watch', lessTask);
+gulp.task('finalize', ['clean'], finalizeTask);
+gulp.task('watch', watchTask);
+gulp.task('build', ['bundle', 'less', 'copy', 'finalize']);
+gulp.task('default', ['build']);
+
+var releaseForOs = {
+  osx: require('./tasks/release_osx'),
+  windows: require('./tasks/release_windows'),
+};
+
+gulp.task('release', ['build'], function () {
+  return releaseForOs[platformString()]();
+});

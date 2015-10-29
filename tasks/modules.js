@@ -6,15 +6,22 @@
 
 'use strict';
 
+var srcDir = __dirname + '/../src';
+
 var childProcess = require('child_process');
 var jetpack = require('fs-jetpack');
 var argv = require('yargs').argv;
 
-var utils = require('./utils');
+var utils = require('./utils.js');
 
-var electronVersion = utils.getElectronVersion();
+var getElectronVersion = function () {
+  var manifest = jetpack.read(__dirname + '/../package.json', 'json');
+  return manifest.devDependencies['electron-prebuilt'].substring(1);
+};
 
-var nodeModulesDir = jetpack.cwd(__dirname + '/../app/node_modules')
+var electronVersion = getElectronVersion();
+
+var nodeModulesDir = jetpack.cwd(srcDir + '/node_modules')
 var dependenciesCompiledAgainst = nodeModulesDir.read('electron_version');
 
 // When you raised version of Electron used in your project, the safest
@@ -48,7 +55,7 @@ if (process.platform === 'win32') {
 }
 
 var install = childProcess.spawn(installCommand, params, {
-    cwd: __dirname + '/../app',
+    cwd: srcDir,
     env: process.env,
     stdio: 'inherit'
 });

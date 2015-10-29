@@ -1,0 +1,17 @@
+{
+  "name": "euclid",
+  "productName": "Euclid",
+  "identifier": "com.adobe.euclid",
+  "description": " ",
+  "version": "0.1.0",
+  "author": "Adobe",
+  "main": "background.js",
+  "license": "UNLICENSED",
+  "repository": "private",
+  "config": {
+    "target": "development"
+  },
+  "dependencies": {
+    "fs-jetpack": "^0.7.0"
+  }
+}

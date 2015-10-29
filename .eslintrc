@@ -1,0 +1,21 @@
+{
+  "env": {
+    "es6": true,
+    "jest": true,
+  },
+  "extends": "airbnb",
+  "parser": "babel-eslint",
+  "plugins": [ "babel" ],
+  "rules": {
+    "jsx-quotes": [1, "prefer-single"],
+    "react/react-in-jsx-scope": 0,
+    "react/no-unknown-property": 0,
+    "react/jsx-no-undef": 0,
+    "react/sort-comp": [0],
+    // this is too chatty with functions with arguments meant to be over-ridden 
+    "no-unused-vars": 0,
+    "id-length": [0, {"properties": "never"}],
+    "no-undef": 0,
+    "new-cap": 0,
+  },
+}
