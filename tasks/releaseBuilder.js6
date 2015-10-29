@@ -1,0 +1,18 @@
+import os  from 'os'
+
+var platformString = function () {
+  switch (os.platform()) {
+    case 'darwin': return 'osx';
+    case 'win32': return 'windows';
+  }
+  return 'unsupported';
+};
+
+var platformReleaseBuilders = {
+  osx: require('./releaseBuilderOSX'),
+  windows: require('./releaseBuilderWindows'),
+};
+
+module.exports = function () {
+  platformReleaseBuilders[platformString()]()
+};

@@ -1,10 +1,10 @@
 import jetpack  from 'fs-jetpack'
 import gulp  from 'gulp'
 import less  from 'gulp-less'
-import os  from 'os'
 import pathUtil  from 'path'
 import Q  from 'q'
 import rollup  from 'rollup'
+import releaseBuilder  from './tasks/releaseBuilder'
 import utils  from './tasks/utils.js'
 
 var projectDir = jetpack;
@@ -97,13 +97,9 @@ var watchTask = function () {
     gulp.watch('src/**/*.less', ['less-watch']);
 };
 
-var platformString = function () {
-  switch (os.platform()) {
-    case 'darwin': return 'osx';
-    case 'win32': return 'windows';
-  }
-  return 'unsupported';
-};
+var releaseTask = function() {
+  releaseBuilder();
+}
 
 // --------------------------------------------------
 
@@ -116,14 +112,6 @@ gulp.task('less', ['clean'], lessTask);
 gulp.task('less-watch', lessTask);
 gulp.task('finalize', ['clean'], finalizeTask);
 gulp.task('watch', watchTask);
+gulp.task('release', ['build'], releaseTask);
 gulp.task('build', ['bundle', 'less', 'copy', 'finalize']);
 gulp.task('default', ['build']);
-
-var releaseForOs = {
-  osx: require('./tasks/release_osx'),
-  windows: require('./tasks/release_windows'),
-};
-
-gulp.task('release', ['build'], function () {
-  return releaseForOs[platformString()]();
-});
