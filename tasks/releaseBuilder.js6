@@ -1,18 +1,257 @@
+import asar  from 'asar'
+import childProcess  from 'child_process'
+import jetpack  from 'fs-jetpack'
+import gulpUtil  from 'gulp-util'
 import os  from 'os'
 
-var platformString = function () {
-  switch (os.platform()) {
-    case 'darwin': return 'osx';
-    case 'win32': return 'windows';
+// ==================================================
+
+class BuilderHelper {
+  replace(str, patterns) {
+    Object.keys(patterns).forEach(function (pattern) {
+      var matcher = new RegExp('{{' + pattern + '}}', 'g');
+      str = str.replace(matcher, patterns[pattern]);
+    });
+    return str;
   }
-  return 'unsupported';
+
+  constructor(config) {
+    this._config = config;
+  }
+
+  build() {
+    Promise.resolve(true)
+    .then(() => this.init())
+    .then(() => this.copyRuntime())
+    .then(() => this.cleanupRuntime())
+    .then(() => this.packageBuiltApp())
+    .then(() => this.finalize())
+    .then(() => this.renameApp())
+    .then(() => this.packageRelease())
+    .then(() => this.cleanClutter())
+    .catch((reason) => console.error(reason));
+  }
+
+  init() {
+    this._projectDir = jetpack;
+    this._srcDir = 'src';
+    this._tmpDir = this._projectDir.dir('./tmp', { empty: true });
+    this._releasesDir = this._projectDir.dir('./releases');
+    this._resDir = this._projectDir.dir('res');
+    this._manifest = this._projectDir.read(this._srcDir + '/manifest.json', 'json');
+  }
+
+  copyRuntime() {}
+  cleanupRuntime() {}
+
+  packageBuiltApp() {
+    let promise = Promise.resolve(true);
+    promise.then(() => {
+      asar.createPackage(this._projectDir.path('build'), this._archiveDir, function() { Promise.resolve(promise); });
+    }());
+    return promise;
+  }
+
+  finalize() {}
+  renameApp() {}
+  packageRelease() {}
+  cleanClutter() {
+    return this._tmpDir.removeAsync('.');
+  };
+}
+
+// ==================================================
+
+class BuilderHelperOSX extends BuilderHelper {
+  constructor(config) {
+    super(config);
+  }
+
+  init() {
+    super.init();
+    this._finalAppDir = this._tmpDir.cwd(this._manifest.productName + '.app');
+    this._archiveDir = this._finalAppDir.path('Contents/Resources/app.asar');
+  }
+
+  copyRuntime() {
+    return this._projectDir.copyAsync('node_modules/electron-prebuilt/dist/Electron.app', this._finalAppDir.path());
+  }
+
+  cleanupRuntime() {
+    this._finalAppDir.remove('Contents/Resources/default_app');
+    this._finalAppDir.remove('Contents/Resources/atom.icns');
+  }
+
+  finalize() {
+    // Prepare main Info.plist
+    var info = this._resDir.read('osx/Info.plist');
+    info = this.replace(info, {
+      productName: this._manifest.productName,
+      identifier: this._manifest.identifier,
+      version: this._manifest.version
+    });
+    this._finalAppDir.write('Contents/Info.plist', info);
+
+    // Prepare Info.plist of Helper apps
+    [' EH', ' NP', ''].forEach((helper_suffix) => {
+      info = this._resDir.read('osx/helper_apps/Info' + helper_suffix + '.plist');
+      info = this.replace(info, {
+        productName: this._manifest.productName,
+        identifier: this._manifest.identifier
+      });
+      this._finalAppDir.write('Contents/Frameworks/Electron Helper' + helper_suffix + '.app/Contents/Info.plist', info);
+    });
+
+    // Copy icon
+    this._resDir.copy('osx/icon.icns', this._finalAppDir.path('Contents/Resources/icon.icns'));
+  }
+
+  renameApp() {
+    // Rename helpers
+    [' Helper EH', ' Helper NP', ' Helper'].forEach((helper_suffix) => {
+      this._finalAppDir.rename('Contents/Frameworks/Electron' + helper_suffix + '.app/Contents/MacOS/Electron' + helper_suffix, this._manifest.productName + helper_suffix );
+      this._finalAppDir.rename('Contents/Frameworks/Electron' + helper_suffix + '.app', this._manifest.productName + helper_suffix + '.app');
+    });
+    // Rename application
+    this._finalAppDir.rename('Contents/MacOS/Electron', this._manifest.productName);
+  }
+
+  packageRelease() {
+    var dmgManifest = this._resDir.read('osx/appdmg.json');
+    dmgManifest = this.replace(dmgManifest, {
+      productName: this._manifest.productName,
+      appPath: this._finalAppDir.path(),
+      dmgIcon: this._resDir.path('osx/dmg-icon.icns'),
+      dmgBackground: this._resDir.path('osx/dmg-background.png')
+    });
+    this._tmpDir.write('appdmg.json', dmgManifest);
+
+    var dmgName = this._manifest.name + '_' + this._manifest.version + '.dmg';
+    this._releasesDir.remove(dmgName);
+
+    return new Promise(() => {
+      gulpUtil.log('Packaging to DMG file...');
+      var readyDmgPath = this._releasesDir.path(dmgName);
+      var appdmg = require('appdmg');
+      appdmg({
+        source: this._tmpDir.path('appdmg.json'),
+        target: readyDmgPath,
+      })
+      .on('error', (err) => {
+        console.error("err);
+        return Promise.reject(err);
+      })
+      .on('finish', () => {
+        gulpUtil.log('DMG file ready!', readyDmgPath);
+        return Promise.resolve();
+      });
+    });
+  };
 };
 
-var platformReleaseBuilders = {
-  osx: require('./releaseBuilderOSX'),
-  windows: require('./releaseBuilderWindows'),
+// ==================================================
+
+class BuilderHelperWindows extends BuilderHelper {
+  constructor(config) {
+    super(config);
+  }
+
+  init() {
+    super.init();
+    this._finalAppDir = this._tmpDir.cwd(this._manifest.name);
+    this._archiveDir = this._finalAppDir.path('resources/app.asar');
+  }
+
+  copyRuntime() {
+     return projectDir.copyAsync('node_modules/electron-prebuilt/dist', this._finalAppDir.path(), { overwrite: true });
+   }
+
+  cleanupRuntime() {
+     return readyDir.removeAsync('resources/default_app');
+  }
+
+  finalize() {
+  //  var deferred = Q.defer();
+  //  projectDir.copy('resources/windows/icon.ico', this._finalAppDir.path('icon.ico'));
+  //
+  //   // Replace Electron icon for your own.
+  //   var rcedit = require('rcedit');
+  //   rcedit(this._finalAppDir.path('electron.exe'), {
+  //     'icon': this._projectDir.path('resources/windows/icon.ico'),
+  //     'version-string': {
+  //       'ProductName': this._manifest.productName,
+  //       'FileDescription': this._manifest.description,
+  //     }
+  //   }, function (err) {
+  //     if (!err) {
+  //       deferred.resolve();
+  //     }
+  //   });
+  //
+  //   return deferred.promise;
+  };
+
+  renameApp() {
+     return this._finalAppDir.renameAsync('electron.exe', this._manifest.productName + '.exe');
+  };
+
+  packageRelease() {
+  //   var finalPackageName = this._manifest.name + '_' + this._manifest.version + '.exe';
+  //   var installScript = this._projectDir.read('resources/windows/installer.nsi');
+  //   installScript = this.replace(installScript, {
+  //     name: this._manifest.name,
+  //     productName: this._manifest.productName,
+  //     version: this._manifest.version,
+  //     src: this._finalAppDir.path(),
+  //     dest: this._releasesDir.path(finalPackageName),
+  //     icon: this._finalAppDir.path('icon.ico'),
+  //     setupIcon: this._projectDir.path('resources/windows/setup-icon.ico'),
+  //     banner: this._projectDir.path('resources/windows/setup-banner.bmp'),
+  //   });
+  //   tmpDir.write('installer.nsi', installScript);
+  //
+  //   gulpUtil.log('Building installer with NSIS...');
+  //
+  //   // Remove destination file if already exists.
+  //   this._releasesDir.remove(finalPackageName);
+  //
+  //   // Note: NSIS has to be added to PATH (environment variables).
+  //   var nsis = childProcess.spawn('makensis', [tmpDir.path('installer.nsi')], { stdio: 'inherit' });
+  //   nsis.on('error', function (err) {
+  //     if (err.message === 'spawn makensis ENOENT') {
+  //       throw "Can't find NSIS. Are you sure you've installed it and"
+  //       + " added to PATH environment variable?";
+  //     } else {
+  //       throw err;
+  //     }
+  //   });
+  //   nsis.on('close', function () {
+  //     gulpUtil.log('Installer ready!', this._releasesDir.path(finalPackageName));
+  //     deferred.resolve();
+  //   });
+  }
 };
 
-module.exports = function () {
-  platformReleaseBuilders[platformString()]()
+// ==================================================
+
+class ReleaseBuilder {
+  static getPlatformHelper(config) {
+    switch (os.platform()) {
+      case 'darwin': return new BuilderHelperOSX(config);
+      case 'win32': return new BuilderHelperWindows(config);
+    }
+    return;
+  }
+
+  static build(config) {
+    const helper = ReleaseBuilder.getPlatformHelper(config);
+    if (helper) {
+      return helper.build();
+    }
+  }
+};
+
+module.exports = function() {
+  const config = {};
+  return ReleaseBuilder.build(config);
 };

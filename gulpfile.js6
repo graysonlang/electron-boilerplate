@@ -72,7 +72,7 @@ var lessTask = function () {
 };
 
 var finalizeTask = function () {
-    var manifest = srcDir.read('package.json', 'json');
+    var manifest = srcDir.read('manifest.json', 'json');
     // Add "dev" or "test" suffix to name, so Electron will write all data
     // like cookies and localStorage in separate places for each environment.
     switch (utils.getEnvName()) {
@@ -85,7 +85,7 @@ var finalizeTask = function () {
             manifest.productName += ' Test';
             break;
     }
-    destDir.write('package.json', manifest);
+    destDir.write('manifest.json', manifest);
 
     var configFilePath = projectDir.path('config/env_' + utils.getEnvName() + '.json');
     destDir.copy(configFilePath, 'env_config.json');
